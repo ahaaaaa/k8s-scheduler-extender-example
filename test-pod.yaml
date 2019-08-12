@@ -2,10 +2,18 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: test-pod
+  namespace: ad
 spec:
   schedulerName: my-scheduler
   containers:
   - name: nginx
-    image: nginx
+    image: njreg.jpushoa.com/ibrary/nginx:1.13.12
     ports:
     - containerPort: 80
+  nodeSelector:
+    j-dedicated: ad
+  tolerations:
+    - key: "j-env"
+      operator: "Equal"
+      value: "product"
+      effect: "NoSchedule"

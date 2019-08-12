@@ -1,0 +1,232 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-scheduler
+  namespace: kube-system
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: kube-schluder-clusterrole
+  labels:
+    app.kubernetes.io/name: kube-system
+    app.kubernetes.io/part-of: kube-system
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - create
+      - delete
+      - list
+      - patch
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - endpoints
+    verbs:
+      - get
+      - list
+      - create
+      - delete
+      - list
+      - patch
+      - watch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-scheduler-as-kube-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: my-scheduler
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: kube-schluder-clusterrole
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-scheduler-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: my-scheduler
+    namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-scheduler-volume-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:volume-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: my-scheduler
+    namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: my-scheduler-config-role-binding
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: my-scheduler
+    namespace: kube-system
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-scheduler-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    apiVersion: kubescheduler.config.k8s.io/v1alpha1
+    kind: KubeSchedulerConfiguration
+    schedulerName: my-scheduler
+    algorithmSource:
+      policy:
+        configMap:
+          namespace: kube-system
+          name: my-scheduler-policy
+    leaderElection:
+      leaderElect: true
+      lockObjectName: my-scheduler
+      lockObjectNamespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-scheduler-policy
+  namespace: kube-system
+data:
+ policy.cfg : |
+  {
+    "kind" : "Policy",
+    "apiVersion" : "v1",
+    "predicates" : [
+      {"name" : "PodFitsHostPorts"},
+      {"name" : "PodFitsResources"},
+      {"name" : "NoDiskConflict"},
+      {"name" : "MatchNodeSelector"},
+      {"name" : "HostName"}
+    ],
+    "priorities" : [
+      {"name" : "LeastRequestedPriority", "weight" : 1},
+      {"name" : "BalancedResourceAllocation", "weight" : 1},
+      {"name" : "ServiceSpreadingPriority", "weight" : 1},
+      {"name" : "EqualPriority", "weight" : 1}
+    ],
+    "extenders" : [{
+      "urlPrefix": "http://localhost/scheduler",
+      "filterVerb": "predicates/always_true",
+      "prioritizeVerb": "priorities/zero_score",
+      "preemptVerb": "preemption",
+      "bindVerb": "",
+      "weight": 1,
+      "enableHttps": false,
+      "nodeCacheCapable": false
+    }],
+    "hardPodAffinitySymmetricWeight" : 10
+  }
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: schulder-kubeconfig
+  namespace: kube-system
+data:
+  config: |
+    apiVersion: v1
+    clusters:
+      - cluster:
+          certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUN5RENDQWJDZ0F3SUJBZ0lCQURBTkJna3Foa2lHOXcwQkFRc0ZBREFWTVJNd0VRWURWUVFERXdwcmRXSmwKY201bGRHVnpNQjRYRFRFNU1EZ3dOVEEwTXpjME4xb1hEVEk1TURnd01qQTBNemMwTjFvd0ZURVRNQkVHQTFVRQpBeE1LYTNWaVpYSnVaWFJsY3pDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBTnBoCmovYVZEclNSbHg5TWpXMkVHWlEyS0JGb0ZHR0p1NzhuTDN2T0hpVUI5QUJNSU5oeFF4KzBKMlJGVXNPdWZNYjUKcVZnSk9mQUNJRVBSalBrdmhtMjRvRU5ZcWRaaWcwYjVvWktORXlqRXFvVGVtRGZZdWZQL0VtYm1jN24xaStkaQphcGxVbGpzV200QkRLdGhCT01HV2hjMk16bTd6dGtNYXBkbVlBOG9IcStJM05WbUl4RnRoR3VxUi9mMU1yMUlECjRFYldEZHRxODVDRzFzS3RPK3Y5MS80SXNEWTlUMWUvNW4xUXRwZ01tNS9COWNjeFc2dVdsbnFGYWhVSVdhMVYKUzNrWUFoVmlCTnpxc2J6WDJIdFpxc3dPRGw3bCs0R1pFdVl1eUhPck8vS3NVZnVEVGh1UFYvM2gwcHhETGRFawp2eW5JRTdvL0FUWVFGMXdKKzBrQ0F3RUFBYU1qTUNFd0RnWURWUjBQQVFIL0JBUURBZ0trTUE4R0ExVWRFd0VCCi93UUZNQU1CQWY4d0RRWUpLb1pJaHZjTkFRRUxCUUFEZ2dFQkFIc2pBNjRrd1hJOVBoaEYwbUh6a1g4TnppOXgKc1BqL0dMTHVkU2hYMEwzNGZwdkM5Ulhhc0tTb2hLK2tiZTBzYlBSaUNsZGtCR1NyUHBrcEszZjgvT0FWcTh4TgpwdG1aa2xDU1RNVzlJdU9NZXZaSmNLR1VnazZQVnlZMmNoMUZuVjNnWGFXbnNNc29MRlc5bXFOKysraDM0T0NJClpIeU9GVjdXZWh6NlJiYzZOM0hHVEFLdXVYN2gwQkQzbUxSVWZwSTBlVld2RlVYSXlFZUozODI0UmppWXpNd1gKRldvVGlXdWpZZUhmVDJKUXcwU2xqTmE1aHdOVUprYWc3emF4MUlKdG0vbU90UGhudm1qa1kvNjdkdG5GSXZZZQpnWHdNQmZMY0xOWXNvTE53eExTci8vejZjdDNSdXcycWVHT0xGUWdTeVJKNlMzbnp4cml6S2lmUUI2bz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+          server: https://172.17.8.116:6443
+        name: kubernetes
+    contexts:
+      - context:
+          cluster: kubernetes
+          namespace: kube-system
+          user: my-scheduler
+        name: kube-system
+    current-context: kube-system
+    kind: Config
+    preferences: {}
+    users:
+      - name: my-scheduler
+        user:
+          token: eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJteS1zY2hlZHVsZXItdG9rZW4tZ25xeHgiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC5uYW1lIjoibXktc2NoZWR1bGVyIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQudWlkIjoiYThlMzQ3YmUtMDNlMi00ZTlmLWE5ZGYtNWUwZGY3ZDBjZTQxIiwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50Omt1YmUtc3lzdGVtOm15LXNjaGVkdWxlciJ9.j1jz6DvxKO1IZYGXyenrFs9NfP2wwFN89ivTZYq2Ty6KrpARrFn3LaluYuulToDVS03D25x6zzOVreE4aBKbHF-qWQjlW7DZEPK4NNwCUBk7F-QyM3vijQL2wdyIwgjkkSzDnxSkawEuT2wH6ZQ8h_ME4ONyCKijHmhCTSekb8hPEg6OBhFRYm428RrRbi4GwhnSUBuG5h3AStIgwQw0A6lIC9qo-8migwZkuP_dE5v0uZYqsK9NzoYe4roilh1Hnq7nh0nGpnh81d6SInwk9j0o9HJ8Kq88yr6C8e9v8VP6dQBHGGY6c8BLtgdU1XhAUZhR777qvZmkPVRJ9qjlQQ
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-scheduler
+  namespace: kube-system
+  labels:
+    app: my-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-scheduler
+  template:
+    metadata:
+      labels:
+        app: my-scheduler
+    spec:
+      serviceAccountName: my-scheduler
+      volumes:
+      - name: my-scheduler-config
+        configMap:
+          name: my-scheduler-config
+      - name: schulder-kubeconfig
+        configMap:
+          name: schulder-kubeconfig
+      containers:
+      - name: my-scheduler-ctr
+        image: njreg.jpushoa.com/ad/hyperkube:v1.15.0
+        imagePullPolicy: IfNotPresent
+        args:
+        - kube-scheduler
+        - --config=/my-scheduler/config.yaml
+        - -v=4
+        volumeMounts:
+        - name: my-scheduler-config
+          mountPath: /my-scheduler
+        - name: schulder-kubeconfig
+          mountPath: /.kube/
+      - name: my-scheduler-extender-ctr
+        image: njreg.jpushoa.com/ad/k8s-scheduler-extender-example:0.0.3-beta
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /version
+            port: 80
+        readinessProbe:
+          httpGet:
+            path: /version
+            port: 80
+        ports:
+          - containerPort: 80

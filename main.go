@@ -24,6 +24,8 @@ const (
 	prioritiesPrefix = apiPrefix + "/priorities"
 )
 
+
+
 var (
 	version string // injected via ldflags at build time
 
@@ -39,6 +41,22 @@ var (
 		Func: func(_ v1.Pod, nodes []v1.Node) (*schedulerapi.HostPriorityList, error) {
 			var priorityList schedulerapi.HostPriorityList
 			priorityList = make([]schedulerapi.HostPriority, len(nodes))
+			for i, node := range nodes {
+				priorityList[i] = schedulerapi.HostPriority{
+					Host:  node.Name,
+					Score: 0,
+				}
+			}
+			return &priorityList, nil
+		},
+	}
+
+	StealTimePriority = Prioritize{
+		Name: "stealtime_score",
+		Func: func(_ v1.Pod, nodes []v1.Node) (*schedulerapi.HostPriorityList, error) {
+			var priorityList schedulerapi.HostPriorityList
+			priorityList = make([]schedulerapi.HostPriority, len(nodes))
+
 			for i, node := range nodes {
 				priorityList[i] = schedulerapi.HostPriority{
 					Host:  node.Name,
@@ -87,8 +105,8 @@ func StringToLevel(levelStr string) colog.Level {
 }
 
 func main() {
-	colog.SetDefaultLevel(colog.LInfo)
-	colog.SetMinLevel(colog.LInfo)
+	colog.SetDefaultLevel(colog.LDebug)
+	colog.SetMinLevel(colog.LDebug)
 	colog.SetFormatter(&colog.StdFormatter{
 		Colors: true,
 		Flag:   log.Ldate | log.Ltime | log.Lshortfile,
